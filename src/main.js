@@ -271,7 +271,7 @@ function renderStats() {
               .map(
                 (code) => `<li><button data-code="${esc(code)}"><span class="flag">${flag(code)}</span>
                 <span class="cname">${esc(countryName(code))}${SOVEREIGN.has(code) ? '' : ' <em>territory</em>'}</span>
-                <span class="muted">${citiesIn(code)} ${citiesIn(code) === 1 ? 'city' : 'cities'}${firstYear(code) ? ' · ' + firstYear(code) : ''}</span></button></li>`,
+                <span class="muted">${citiesIn(code)} ${citiesIn(code) === 1 ? 'city' : 'cities'}${s.countryTrips.get(code).size > 1 ? ` · ${s.countryTrips.get(code).size} visits` : ''}${firstYear(code) ? ' · ' + firstYear(code) : ''}</span></button></li>`,
               )
               .join('')}</ul>`
           : '<p class="muted">Countries you visit will be listed here.</p>'
@@ -288,30 +288,45 @@ function renderStats() {
       <p class="muted small" id="backup-msg"></p>
     </section>`;
   for (const b of document.querySelectorAll('.country-list button')) b.addEventListener('click', () => openCountry(b.dataset.code));
-  $('#btn-export').addEventListener('click', doExport);
+  $('#btn-export').onclick = doExport;
   $('#file-import').addEventListener('change', doImport);
 }
 
+// Export is two taps: first build the file (can take a while with many photos),
+// then a "Save backup" tap opens the share sheet. iOS only allows the share
+// sheet straight from a tap, so it can't wait on the slow part.
 async function doExport() {
   const msg = $('#backup-msg');
+  const btn = $('#btn-export');
   msg.textContent = 'Preparing backup…';
+  btn.disabled = true;
   try {
     const data = await db.exportBackup();
     const name = `travel-globe-backup-${new Date().toISOString().slice(0, 10)}.json`;
     const file = new File([JSON.stringify(data)], name, { type: 'application/json' });
-    if (navigator.canShare?.({ files: [file] })) {
-      await navigator.share({ files: [file], title: 'Travel Globe backup' });
-    } else {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(file);
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    }
-    msg.textContent = `Backup ready: ${data.trips.length} trips, ${Object.keys(data.photos).length} photos. Save it to Files or iCloud Drive.`;
+    msg.textContent = `Backup ready: ${data.trips.length} trips, ${Object.keys(data.photos).length} photos.`;
+    btn.textContent = 'Save backup';
+    btn.disabled = false;
+    btn.onclick = () => {
+      saveFile(file).then(
+        () => (msg.textContent = 'Saved. Keep it in Files or iCloud Drive.'),
+        (err) => (msg.textContent = err.name === 'AbortError' ? msg.textContent : 'Could not save: ' + err.message),
+      );
+    };
   } catch (e) {
-    msg.textContent = e.name === 'AbortError' ? '' : 'Export failed: ' + e.message;
+    btn.disabled = false;
+    msg.textContent = 'Export failed: ' + e.message;
   }
+}
+
+function saveFile(file) {
+  if (navigator.canShare?.({ files: [file] })) return navigator.share({ files: [file], title: 'Travel Globe backup' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = file.name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  return Promise.resolve();
 }
 
 async function doImport(e) {
@@ -408,18 +423,23 @@ function openCountry(code) {
   const ts = sortTrips(trips.filter((t) => t.stops.some((s) => s.countryCode === code)));
   const cities = [...stats.cities.values()].filter((c) => c.stop.countryCode === code).map((c) => c.stop.name);
   openSheet(`<div class="sheet-head"><div class="big-flag">${flag(code)}</div><div><h2>${esc(countryName(code))}</h2>
-    <div class="muted">${cities.length} ${cities.length === 1 ? 'city' : 'cities'} · ${ts.length} ${ts.length === 1 ? 'trip' : 'trips'}</div></div></div>
+    <div class="muted">${cities.length} ${cities.length === 1 ? 'city' : 'cities'} · ${ts.length} ${ts.length === 1 ? 'visit' : 'visits'}</div></div></div>
+    <button class="btn btn-wide" id="btn-revisit">＋ Add another visit to ${esc(countryName(code))}</button>
     ${ts.map(tripCard).join('')}`);
   wireTripCards(sheetBody);
+  // Start the new visit with the cities from the latest one; remove any you didn't go to.
+  $('#btn-revisit').addEventListener('click', () =>
+    openEditor(null, { stops: (ts[0]?.stops || []).filter((s) => s.countryCode === code) }),
+  );
 }
 
 // ---------- editor ----------
 let draft = null;
 
-function openEditor(t) {
+function openEditor(t, preset = {}) {
   draft = t
     ? { ...t, stops: [...t.stops], photoIds: [...(t.photoIds || [])], newPhotos: [], removed: [] }
-    : { id: null, title: '', start: '', end: '', notes: '', stops: [], photoIds: [], newPhotos: [], removed: [] };
+    : { id: null, title: '', start: '', end: '', notes: '', stops: [...(preset.stops || [])], photoIds: [], newPhotos: [], removed: [] };
   openSheet(
     `<form id="editor" class="editor" autocomplete="off">
       <div class="editor-head"><button type="button" class="link" id="ed-cancel">Cancel</button><h2>${t ? 'Edit trip' : 'New trip'}</h2><button type="submit" class="link strong">Save</button></div>
@@ -484,10 +504,12 @@ async function searchCities(q) {
   const r = await fetch(url);
   if (!r.ok) throw new Error('search failed');
   const j = await r.json();
-  const all = (j.results || []).filter((x) => x.country_code);
-  // Prefer towns and cities (GeoNames "PPL*" codes) over heliports, palaces, etc.
-  const places = all.filter((x) => String(x.feature_code || '').startsWith('PPL'));
-  return places.length ? places : all;
+  // Drop airports, stations and hotels; list towns, islands and regions before
+  // other landmarks (GeoNames feature codes), keeping the API's order otherwise.
+  const skip = /^(AIR|RSTN|HTL|BLDG)/;
+  const placeLike = /^(PPL|ISL|ADM|PCL|ARCH|PRSH)/;
+  const all = (j.results || []).filter((x) => x.country_code && !skip.test(x.feature_code || ''));
+  return [...all.filter((x) => placeLike.test(x.feature_code || '')), ...all.filter((x) => !placeLike.test(x.feature_code || ''))];
 }
 
 function renderResults(res) {
