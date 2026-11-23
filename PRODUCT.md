@@ -42,7 +42,7 @@ A personal, private travel globe: visited countries light up and every city is a
 
 ## Evidence on Hand
 
-- The owner's real travel list: 21 places (19 countries + Hong Kong and Macau), 45 cities, currently undated, no photos yet. Kept in the gitignored `my-trips.json`, never committed.
+- The owner's real travel list exists as a local import file (`my-trips.json`, gitignored). Its contents are private and never go in the repo or this file.
 - No other users, testimonials or metrics exist; do not invent any.
 
 ## Product Principles

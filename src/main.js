@@ -420,27 +420,41 @@ document.addEventListener('keydown', (e) => e.key === 'Escape' && !sheet.hidden 
 // Swipe the sheet down to close it, like an iOS sheet.
 const panel = $('.sheet-panel');
 let dragStartY = null;
+let dragStartX = 0;
 let dragDy = 0;
+function endDrag() {
+  dragStartY = null;
+  panel.style.transition = '';
+}
 panel.addEventListener('touchstart', (e) => {
+  // Sideways photo swipes, text fields and search results keep their own gestures.
+  if (e.target.closest('.photo-strip, input, textarea, .results')) {
+    dragStartY = null;
+    return;
+  }
   const onHandle = e.target.closest('.grabber, .sheet-head, .editor-head');
   dragStartY = onHandle || sheetBody.scrollTop <= 0 ? e.touches[0].clientY : null;
+  dragStartX = e.touches[0].clientX;
   dragDy = 0;
 }, { passive: true });
 panel.addEventListener('touchmove', (e) => {
   if (dragStartY == null) return;
+  const dx = e.touches[0].clientX - dragStartX;
   dragDy = e.touches[0].clientY - dragStartY;
-  if (dragDy > 0) {
+  if (Math.abs(dx) > Math.abs(dragDy) && Math.abs(dx) > 10) {
+    endDrag(); // mostly sideways: not a dismiss gesture
+    panel.style.transform = '';
+  } else if (dragDy > 0) {
     panel.style.transition = 'none';
     panel.style.transform = `translateY(${dragDy}px)`;
   } else if (dragDy < -8) {
-    dragStartY = null; // scrolling up: let the content scroll
+    endDrag(); // scrolling up: let the content scroll
     panel.style.transform = '';
   }
 }, { passive: true });
 panel.addEventListener('touchend', () => {
   if (dragStartY == null) return;
-  dragStartY = null;
-  panel.style.transition = '';
+  endDrag();
   if (dragDy > 110) dismissSheet();
   else panel.style.transform = '';
 });
