@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#050914" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Globe" />
+    <link rel="apple-touch-icon" href="./icon-180.png" />
+    <link rel="icon" type="image/png" href="./icon-192.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <title>Travel Globe</title>
+  </head>
+  <body>
+    <div id="stars" aria-hidden="true"></div>
+    <div id="globe"></div>
+
+    <div id="globe-ui">
+      <button id="hdr" class="hdr" aria-label="Open stats">
+        <div class="hdr-main"><span id="hdr-count">0</span> <span id="hdr-label">countries</span></div>
+        <div class="hdr-sub"><span id="hdr-pct">0% of the world</span> · <span id="hdr-cities">0 cities</span></div>
+      </button>
+      <p id="empty-hint" class="empty-hint">Tap <b>＋</b> to add your first trip</p>
+    </div>
+
+    <main id="view-trips" class="view" hidden>
+      <header class="view-head"><h1>Trips</h1></header>
+      <div id="trip-list"></div>
+    </main>
+
+    <main id="view-stats" class="view" hidden>
+      <header class="view-head"><h1>Your world</h1></header>
+      <div id="stats-body"></div>
+    </main>
+
+    <button id="fab" class="fab" aria-label="Add a trip">＋</button>
+
+    <nav class="tabbar">
+      <button data-tab="globe" class="active"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/></svg><span>Globe</span></button>
+      <button data-tab="trips"><svg viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/></svg><span>Trips</span></button>
+      <button data-tab="stats"><svg viewBox="0 0 24 24"><path d="M5 20V11M12 20V4M19 20v-6"/></svg><span>Stats</span></button>
+    </nav>
+
+    <div id="sheet" hidden>
+      <div id="sheet-backdrop"></div>
+      <div class="sheet-panel"><div class="grabber"></div><div id="sheet-body"></div></div>
+    </div>
+
+    <div id="viewer" hidden></div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
