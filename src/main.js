@@ -15,6 +15,16 @@ import {
 } from './countries.js';
 import * as db from './db.js';
 
+// One drawn icon set: 24px grid, 1.8 stroke, round caps (matches the tab bar).
+const svg = (d, cls = '') =>
+  `<svg class="ico ${cls}" viewBox="0 0 24 24" aria-hidden="true" focusable="false">${d}</svg>`;
+const ICON = {
+  plus: svg('<path d="M12 5v14M5 12h14"/>'),
+  close: svg('<path d="M7 7l10 10M17 7L7 17"/>', 'ico-sm'),
+  camera: svg('<path d="M4 8h3l1.5-2h7L17 8h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
+  globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18"/>', 'ico-xl'),
+};
+
 // ---------- state ----------
 let trips = [];
 const photoUrls = new Map(); // photoId -> object URL
@@ -168,8 +178,31 @@ function flyTo(lat, lng, altitude = window.innerWidth < window.innerHeight ? 2.1
 }
 
 // ---------- header ----------
+// The app's one authored moment: the country count climbs to its value as the globe turns in.
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let shownCount = 0;
+function countTo(el, to) {
+  const from = shownCount;
+  shownCount = to;
+  if (reduceMotion || from === to) {
+    el.textContent = to;
+    return;
+  }
+  const t0 = performance.now();
+  const dur = 1100;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(2, -10 * k); // exponential ease-out
+    el.textContent = Math.round(from + (to - from) * (k === 1 ? 1 : eased));
+    if (k < 1 && shownCount === to) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+  // rAF pauses in background tabs; make sure the real number always lands.
+  setTimeout(() => shownCount === to && (el.textContent = to), dur + 50);
+}
+
 function renderHeader() {
-  $('#hdr-count').textContent = stats.sovereign.length;
+  countTo($('#hdr-count'), stats.sovereign.length);
   $('#hdr-label').textContent = stats.sovereign.length === 1 ? 'country' : 'countries';
   $('#hdr-pct').textContent = `${fmtPct(stats.pct)}% of the world`;
   const nCities = stats.cities.size;
@@ -197,25 +230,30 @@ $('#hdr').addEventListener('click', () => showTab('stats'));
 async function renderTrips() {
   const list = $('#trip-list');
   if (!trips.length) {
-    list.innerHTML = `<div class="empty"><div class="empty-globe">🌍</div><p>No trips yet.</p><p class="muted">Add the places you've been and they'll light up on your globe.</p></div>`;
+    list.innerHTML = `<div class="empty"><div class="empty-globe">${ICON.globe}</div><p>No trips yet.</p><p class="muted">Add the places you've been and they'll light up on your globe.</p></div>`;
     return;
   }
   let html = '';
   let year = null;
   for (const t of sortTrips(trips)) {
-    const y = t.start ? t.start.slice(0, 4) : 'Undated';
+    const y = t.start ? t.start.slice(0, 4) : 'No dates yet';
     if (y !== year) {
       year = y;
       html += `<h3 class="year">${esc(y)}</h3>`;
     }
     const cover = t.photoIds?.[0];
-    const flags = [...new Set(t.stops.map((s) => flag(s.countryCode)))].join(' ');
+    const codes = [...new Set(t.stops.map((s) => s.countryCode))];
+    const title = tripTitle(t);
+    const cities = t.stops.map((s) => s.name).join(' · ');
+    const meta = [t.start ? fmtRange(t) : '', t.photoIds?.length ? `${t.photoIds.length} ${t.photoIds.length === 1 ? 'photo' : 'photos'}` : '']
+      .filter(Boolean)
+      .join(' · ');
     html += `<button class="trip-row" data-id="${esc(t.id)}">
-      <div class="thumb" ${cover ? `data-photo="${esc(cover)}"` : ''}>${cover ? '' : `<span>${flags}</span>`}</div>
+      <div class="thumb ${codes.length > 1 ? 'multi' : ''}" ${cover ? `data-photo="${esc(cover)}"` : ''}>${cover ? '' : codes.slice(0, 3).map((c) => `<span>${flag(c)}</span>`).join('')}</div>
       <div class="trip-text">
-        <div class="trip-title">${esc(tripTitle(t))}</div>
-        <div class="trip-cities">${esc(t.stops.map((s) => s.name).join(' · '))}</div>
-        <div class="trip-date">${esc(fmtRange(t))}${t.photoIds?.length > 1 ? ` · ${t.photoIds.length} photos` : ''}</div>
+        <div class="trip-title">${esc(title)}</div>
+        ${cities !== title ? `<div class="trip-cities">${esc(cities)}</div>` : ''}
+        ${meta ? `<div class="trip-date">${esc(meta)}</div>` : ''}
       </div>
     </button>`;
   }
@@ -347,25 +385,69 @@ async function doImport(e) {
 // ---------- sheets ----------
 const sheet = $('#sheet');
 const sheetBody = $('#sheet-body');
+let openRaf = 0;
 function openSheet(html, { tall = false } = {}) {
   sheetBody.innerHTML = html;
   sheet.classList.toggle('tall', tall);
   sheet.hidden = false;
-  requestAnimationFrame(() => sheet.classList.add('open'));
+  cancelAnimationFrame(openRaf);
+  openRaf = requestAnimationFrame(() => sheet.classList.add('open'));
   sheetBody.scrollTop = 0;
 }
 function closeSheet() {
+  cancelAnimationFrame(openRaf);
   sheet.classList.remove('open');
+  panel.style.transform = '';
   setTimeout(() => {
     if (!sheet.classList.contains('open')) sheet.hidden = true;
   }, 250);
 }
-$('#sheet-backdrop').addEventListener('click', closeSheet);
-document.addEventListener('keydown', (e) => e.key === 'Escape' && !sheet.hidden && closeSheet());
+// Closing by tap-outside, Escape or swipe asks first if the trip form has unsaved changes.
+function dismissSheet() {
+  if (draft && draftDirty && !confirm('Discard the changes to this trip?')) {
+    panel.style.transform = '';
+    return;
+  }
+  if (draft) {
+    cleanupDraftPhotos();
+    draft = null;
+  }
+  closeSheet();
+}
+$('#sheet-backdrop').addEventListener('click', dismissSheet);
+document.addEventListener('keydown', (e) => e.key === 'Escape' && !sheet.hidden && $('#viewer').hidden && dismissSheet());
 
-function photoStrip(ids) {
+// Swipe the sheet down to close it, like an iOS sheet.
+const panel = $('.sheet-panel');
+let dragStartY = null;
+let dragDy = 0;
+panel.addEventListener('touchstart', (e) => {
+  const onHandle = e.target.closest('.grabber, .sheet-head, .editor-head');
+  dragStartY = onHandle || sheetBody.scrollTop <= 0 ? e.touches[0].clientY : null;
+  dragDy = 0;
+}, { passive: true });
+panel.addEventListener('touchmove', (e) => {
+  if (dragStartY == null) return;
+  dragDy = e.touches[0].clientY - dragStartY;
+  if (dragDy > 0) {
+    panel.style.transition = 'none';
+    panel.style.transform = `translateY(${dragDy}px)`;
+  } else if (dragDy < -8) {
+    dragStartY = null; // scrolling up: let the content scroll
+    panel.style.transform = '';
+  }
+}, { passive: true });
+panel.addEventListener('touchend', () => {
+  if (dragStartY == null) return;
+  dragStartY = null;
+  panel.style.transition = '';
+  if (dragDy > 110) dismissSheet();
+  else panel.style.transform = '';
+});
+
+function photoStrip(ids, title) {
   if (!ids?.length) return '';
-  return `<div class="photo-strip">${ids.map((id) => `<img data-photo="${esc(id)}" alt="">`).join('')}</div>`;
+  return `<div class="photo-strip">${ids.map((id, i) => `<img data-photo="${esc(id)}" alt="${esc(`Photo ${i + 1} from ${title}`)}">`).join('')}</div>`;
 }
 function hydratePhotos(root) {
   for (const img of root.querySelectorAll('img[data-photo]')) photoUrl(img.dataset.photo).then((u) => u && (img.src = u));
@@ -385,9 +467,13 @@ $('#viewer').addEventListener('click', () => ($('#viewer').hidden = true));
 
 function tripCard(t) {
   return `<article class="trip-card">
-    ${photoStrip(t.photoIds)}
+    ${
+      t.photoIds?.length
+        ? photoStrip(t.photoIds, tripTitle(t))
+        : `<button class="add-photos" data-edit="${esc(t.id)}">${ICON.camera}<span>Add photos to remember this trip</span></button>`
+    }
     <h2>${esc(tripTitle(t))}</h2>
-    <div class="muted">${esc(fmtRange(t))}</div>
+    <div class="muted">${t.start ? esc(fmtRange(t)) : 'No dates yet'}</div>
     <div class="chips">${t.stops.map((s) => `<span class="chip">${flag(s.countryCode)} ${esc(s.name)}</span>`).join('')}</div>
     ${t.notes ? `<p class="notes">${esc(t.notes)}</p>` : ''}
     <div class="btn-row"><button class="btn btn-ghost" data-edit="${esc(t.id)}">Edit</button><button class="btn btn-ghost" data-globe="${esc(t.id)}">Show on globe</button></div>
@@ -407,7 +493,7 @@ function wireTripCards(root) {
 
 function openTrip(t) {
   if (!t) return;
-  openSheet(tripCard(t));
+  openSheet(tripCard(t).replace('class="trip-card"', 'class="trip-card solo"'));
   wireTripCards(sheetBody);
 }
 
@@ -424,7 +510,7 @@ function openCountry(code) {
   const cities = [...stats.cities.values()].filter((c) => c.stop.countryCode === code).map((c) => c.stop.name);
   openSheet(`<div class="sheet-head"><div class="big-flag">${flag(code)}</div><div><h2>${esc(countryName(code))}</h2>
     <div class="muted">${cities.length} ${cities.length === 1 ? 'city' : 'cities'} · ${ts.length} ${ts.length === 1 ? 'visit' : 'visits'}</div></div></div>
-    <button class="btn btn-wide" id="btn-revisit">＋ Add another visit to ${esc(countryName(code))}</button>
+    <button class="btn btn-wide" id="btn-revisit">${ICON.plus} Add another visit to ${esc(countryName(code))}</button>
     ${ts.map(tripCard).join('')}`);
   wireTripCards(sheetBody);
   // Start the new visit with the cities from the latest one; remove any you didn't go to.
@@ -435,6 +521,7 @@ function openCountry(code) {
 
 // ---------- editor ----------
 let draft = null;
+let draftDirty = false; // any edit since the form opened
 
 function openEditor(t, preset = {}) {
   draft = t
@@ -462,8 +549,12 @@ function openEditor(t, preset = {}) {
     </form>`,
     { tall: true },
   );
+  draftDirty = false;
   renderStops();
   renderPhotoGrid();
+  $('#editor').addEventListener('input', (e) => {
+    if (e.target.id !== 'ed-search') draftDirty = true;
+  });
   const input = $('#ed-search');
   let timer;
   let seq = 0;
@@ -490,10 +581,7 @@ function openEditor(t, preset = {}) {
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') e.preventDefault();
   });
-  $('#ed-cancel').addEventListener('click', () => {
-    cleanupDraftPhotos();
-    closeSheet();
-  });
+  $('#ed-cancel').addEventListener('click', dismissSheet);
   $('#editor').addEventListener('submit', saveDraft);
   $('#ed-delete')?.addEventListener('click', deleteDraft);
   if (!t) setTimeout(() => input.focus(), 300);
@@ -539,6 +627,7 @@ function renderResults(res) {
       }
       $('#ed-search').value = '';
       ul.innerHTML = '';
+      draftDirty = true;
       renderStops();
     });
   }
@@ -548,12 +637,13 @@ function renderStops() {
   const el = $('#ed-stops');
   el.innerHTML = draft.stops.length
     ? draft.stops
-        .map((s, i) => `<span class="chip removable">${flag(s.countryCode)} ${esc(s.name)}<button type="button" data-rm="${i}" aria-label="Remove ${esc(s.name)}">×</button></span>`)
+        .map((s, i) => `<span class="chip removable">${flag(s.countryCode)} ${esc(s.name)}<button type="button" data-rm="${i}" aria-label="Remove ${esc(s.name)}">${ICON.close}</button></span>`)
         .join('')
     : '<span class="muted small">Add one or more cities from this trip.</span>';
   for (const b of el.querySelectorAll('[data-rm]'))
     b.addEventListener('click', () => {
       draft.stops.splice(+b.dataset.rm, 1);
+      draftDirty = true;
       renderStops();
     });
 }
@@ -569,10 +659,10 @@ function renderPhotoGrid() {
       .map(
         (p, idx) => `<div class="ph" ${p.kind === 'saved' ? `data-photo="${esc(p.id)}"` : `style="background-image:url('${p.url}')"`}>
         ${idx === 0 ? '<span class="cover-tag">Cover</span>' : ''}
-        <button type="button" data-kind="${p.kind}" data-key="${p.kind === 'saved' ? esc(p.id) : p.i}" aria-label="Remove photo">×</button></div>`,
+        <button type="button" data-kind="${p.kind}" data-key="${p.kind === 'saved' ? esc(p.id) : p.i}" aria-label="Remove photo">${ICON.close}</button></div>`,
       )
       .join('') +
-    `<label class="ph add"><input type="file" accept="image/*" multiple hidden id="ed-file"><span>＋</span><small>Add photos</small></label>`;
+    `<label class="ph add"><input type="file" accept="image/*" multiple hidden id="ed-file">${ICON.camera}<small>Add photos</small></label>`;
   for (const ph of el.querySelectorAll('.ph[data-photo]')) photoUrl(ph.dataset.photo).then((u) => u && (ph.style.backgroundImage = `url("${u}")`));
   for (const b of el.querySelectorAll('.ph button')) {
     b.addEventListener('click', () => {
@@ -583,6 +673,7 @@ function renderPhotoGrid() {
         const [p] = draft.newPhotos.splice(+b.dataset.key, 1);
         URL.revokeObjectURL(p.url);
       }
+      draftDirty = true;
       renderPhotoGrid();
     });
   }
@@ -598,6 +689,7 @@ function renderPhotoGrid() {
         showError(err.message);
       }
     }
+    draftDirty = true;
     renderPhotoGrid();
   });
 }

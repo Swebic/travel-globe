@@ -54,6 +54,7 @@ const SHORT_NAMES = {
   CZ: 'Czechia',
   MK: 'North Macedonia',
   CI: "Côte d'Ivoire",
+  MO: 'Macau',
 };
 
 export function countryName(code) {

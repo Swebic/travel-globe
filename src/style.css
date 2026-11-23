@@ -44,6 +44,51 @@ button {
   display: none !important;
 }
 
+/* browser surfaces, themed */
+::selection {
+  background: rgba(255, 176, 72, 0.35);
+  color: var(--text);
+}
+input,
+textarea {
+  caret-color: var(--accent);
+  accent-color: var(--accent);
+}
+::placeholder {
+  color: #8a96ae; /* 5:1 on the field background */
+  opacity: 1;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 10px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* drawn icons: same stroke family as the tab bar */
+.ico {
+  width: 24px;
+  height: 24px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  flex: none;
+}
+.ico-sm {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.2;
+}
+.ico-xl {
+  width: 56px;
+  height: 56px;
+  stroke-width: 1.2;
+}
+
 .muted {
   color: var(--muted);
 }
@@ -186,8 +231,18 @@ button {
   background: #1a2338 center/cover no-repeat;
   display: grid;
   place-items: center;
-  font-size: 24px;
+  font-size: 34px;
+  line-height: 1;
   overflow: hidden;
+}
+/* several countries: flags overlap like a small stack */
+.thumb.multi {
+  display: flex;
+  justify-content: center;
+  font-size: 26px;
+}
+.thumb.multi span + span {
+  margin-left: -10px;
 }
 .trip-text {
   min-width: 0;
@@ -214,7 +269,8 @@ button {
   padding: 80px 24px;
 }
 .empty-globe {
-  font-size: 56px;
+  color: var(--accent);
+  margin-bottom: 8px;
 }
 .empty p {
   margin: 8px 0;
@@ -394,6 +450,28 @@ button {
 .btn-wide {
   width: 100%;
   margin-bottom: 12px;
+  gap: 6px;
+}
+.btn-wide .ico {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.2;
+}
+.add-photos {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 12px;
+  padding: 14px;
+  border: 1.5px dashed #3a4560;
+  border-radius: 12px;
+  color: var(--muted);
+  font-size: 14px;
+  text-align: left;
+}
+.add-photos:active {
+  background: #1a2338;
 }
 .btn:disabled {
   opacity: 0.5;
@@ -422,10 +500,16 @@ button {
   border-radius: 50%;
   background: var(--accent);
   color: #1c1205;
-  font-size: 30px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
   box-shadow: 0 10px 30px rgba(255, 150, 40, 0.35);
   z-index: 5;
+  transition: transform 0.15s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.fab .ico {
+  width: 28px;
+  height: 28px;
+  stroke-width: 2.4;
 }
 .fab:active {
   transform: scale(0.94);
@@ -544,6 +628,12 @@ button {
   padding: 14px;
   margin-bottom: 12px;
 }
+/* a single trip fills the sheet itself: no card inside the card */
+.trip-card.solo {
+  background: none;
+  border: 0;
+  padding: 6px 0 0;
+}
 .photo-strip {
   display: flex;
   gap: 8px;
@@ -585,12 +675,13 @@ button {
 }
 .chip.removable button {
   margin-left: 2px;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
+  margin-right: -4px;
+  display: grid;
+  place-items: center;
   border-radius: 50%;
   color: var(--muted);
-  font-size: 17px;
-  line-height: 1;
 }
 .notes {
   white-space: pre-wrap;
@@ -700,9 +791,9 @@ button {
   width: 26px;
   height: 26px;
   border-radius: 50%;
+  display: grid;
+  place-items: center;
   background: rgba(0, 0, 0, 0.6);
-  font-size: 16px;
-  line-height: 1;
 }
 .cover-tag {
   position: absolute;
@@ -722,10 +813,7 @@ button {
   background: transparent;
   color: var(--muted);
   cursor: pointer;
-}
-.ph.add span {
-  font-size: 26px;
-  line-height: 1;
+  gap: 4px;
 }
 .ph.add.busy {
   opacity: 0.5;
